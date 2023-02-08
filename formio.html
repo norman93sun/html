@@ -1,0 +1,396 @@
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <link rel="shortcut icon" href="#" />
+    <link rel="stylesheet" href="https://unpkg.com/formiojs@4.14.12/dist/formio.full.min.css">
+    <link rel="stylesheet" href="https://form.carecloud.io/prod/manage/view/styles.css">
+    <link rel="stylesheet"
+        href="https://form.carecloud.io/prod/manage/view/assets/lib/bootswatch/dist/cosmo/bootstrap.min.css">
+    <link rel="stylesheet"
+        href="https://fonts.googleapis.com/css2/?family=Source+Sans+Pro:wght@300;400;700&display=swap">
+    <script src="https://unpkg.com/formiojs@4.14.12/dist/formio.full.min.js"></script>
+    <script src="https://cdn.staticfile.org/jquery/1.10.2/jquery.min.js">
+    </script>
+    <script type="text/javascript">
+        var formio;
+        var submitData = {};
+        var objectData = {}
+        var formURL = '';
+        var isdebug = false;
+        var isReadOnly = false;
+        var isViewOnly = false;
+        var zoom = 0;
+        var role = '';
+        var service
+        var controlIsChanging = false
+        var _currentComponent
+        var defaultRenderOptions = { sanitizeConfig: { addTags: ['iframe'] } };
+        var renderOptions = {}
+
+        window.onload = function () {
+            var queryParamMap = getRequest();
+            if (queryParamMap.form) {
+                formURL = queryParamMap.form;
+            }
+            if (queryParamMap.role) {
+                role = queryParamMap.role;
+            }
+            if (queryParamMap.debug) {
+                isdebug = queryParamMap.debug ? true : false;
+            }
+            if (isdebug) {
+                createForm()
+            }
+        };
+
+        function refresh() {
+            formio.refresh();
+        }
+
+        function initData(data) {
+            if (data) {
+                objectData = data.objectData // { readOnly: isReadOnly, viewOnly: isViewOnly, zoom: zoom, noAlerts: true }
+                submitData = data.submitData
+                role = data.role
+                formURL = data.url
+                renderOptions = data.renderOptions || defaultRenderOptions
+                createForm()
+            }
+        }
+
+        function initSubmitData(data) {
+            submitData = data
+            Object.keys(submitData.data).map((item) => {
+                if (submitData.data[item] == '') { delete submitData.data[item] }
+            })
+            formio.submission = submitData
+        }
+
+        function initRole(data) {
+            role = data
+            if (formio && formio.form) {
+                resetComponents(formio.form.components);
+            }
+        }
+
+        function createForm() {
+            Formio.createForm(document.getElementById('formio'), formURL, objectData).then(function (form) {
+                form.submission = submitData
+                formio = form
+
+                if (form.form && form.form.display == 'form') {
+                    var meta = document.createElement('meta');
+                    meta.setAttribute('name', 'viewport');
+                    meta.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=10.0, user-scalable=yes');
+                    document.getElementsByTagName('head')[0].appendChild(meta);
+                }
+                form.on('error', function (e) {
+                    if (e && e.length) {
+                        const error = e.map((x) => x.message)
+                        callApp('error', error)
+                    }
+                })
+                form.on('change', function (e) {
+                    callApp('change')
+                })
+                form.on('formLoad', function (e) {
+                    updateControlForm()
+                    callApp('formLoad')
+                })
+                form.on('submit', function (e) {
+                    callApp('submit')
+                })
+                form.on('submitDone', function (e) {
+                    callApp('submitDone')
+                })
+                form.on('submitError', function (e) {
+                    callApp('submitError')
+                })
+                form.on('render', function (e) {
+                    callApp('render')
+                })
+                form.on('initialized', function (e) {
+                    callApp('initialized')
+                })
+                form.on('requestDone', function (e) {
+                    callApp('requestDone')
+                })
+                form.on('languageChanged', function (e) {
+                    callApp('languageChanged', e)
+                })
+                form.on('saveDraftBegin', function (e) {
+                    callApp('saveDraftBegin')
+                })
+                form.on('saveDraft', function (e) {
+                    callApp('saveDraft')
+                })
+                form.on('restoreDraft', function (e) {
+                    callApp('restoreDraft')
+                })
+                form.on('submissionDeleted', function (e) {
+                    callApp('submissionDeleted')
+                })
+                form.on('redraw', function (e) {
+                    callApp('redraw')
+                })
+                form.on('focus', function (e) {
+                    callApp('focus')
+                })
+                form.on('blur', function (e) {
+                    callApp('blur')
+                })
+                form.on('componentChanged', function (e) {
+                    callApp('componentChanged')
+                })
+                form.on('componentError', function (e) {
+                    callApp('componentError')
+                })
+                form.on('nextPage', function (e) {
+                    callApp('nextPage')
+                })
+                form.on('prevPage', function (e) {
+                    callApp('prevPage')
+                })
+                form.on('wizardPageClicked', function (e) {
+                    callApp('wizardPageClicked')
+                })
+                form.on('wizardPageSelected', function (e) {
+                    callApp('wizardPageSelected')
+                })
+                callApp('oninit')
+                setTimeout(() => {
+                    resetComponents(formio.form.components);
+                    if (form.form && form.form.display == 'form') {
+                        updateControlForm();
+                    }
+                });
+            })
+        }
+        async function updateControlForm() {
+            if (
+                controlIsChanging ||
+                !formio.form ||
+                _currentComponent === formio.form.components
+            ) {
+                return;
+            }
+            controlIsChanging = true;
+            _currentComponent = _.cloneDeep(formio.form.components || []);
+            // console.warn('formio', formio)
+            const hasChange = resetComponents(_currentComponent);
+            // if (hasChange) {
+            //     console.warn('formio', formio.form)
+            await formio.setForm({ components: _currentComponent });
+            //     console.warn('formio', formio.form)
+            // }
+            controlIsChanging = false;
+        };
+
+        function resetComponents(components) {
+            let hasChange = false;
+            FormioUtils.eachComponent(components, component => {
+                let visible = _.get(component, 'properties.visible');
+                let required = _.get(component, 'properties.required');
+                // console.info(visible, required)
+                if (visible) {
+                    visible = visible.split(',');
+                    const hidden = visible.indexOf(role) <= -1;
+                    if (component.hidden !== hidden) {
+                        component.hidden = hidden;
+                        hasChange = true;
+                    }
+                }
+                if (required) {
+                    required = required.split(',');
+                    const oldRequired = _.get(component, 'validate.required');
+                    const newRequired = required.indexOf(role) > -1;
+                    // console.info(oldRequired, newRequired)
+                    if (oldRequired !== newRequired) {
+                        _.set(component, 'validate.required', newRequired);
+                        hasChange = true;
+                    }
+                }
+            });
+            return hasChange;
+        };
+
+        function callApp(func, e = '') {
+            if (func) {
+                const data = {
+                    Name: func,
+                    Data: e
+                }
+                // console.info(data)
+                try {
+                    setupWKWebViewJavascriptBridge(function (bridge) {
+                        // h5调用app方法
+                        bridge.callHandler('event', data, function (response) {
+                            // app登录成功的回调（登录信息）
+
+                        })
+                    })
+                } catch (error) {
+                    console.warn(error)
+                }
+                try {
+                    // h5调用app方法
+                    app.event(JSON.stringify(data))
+                } catch (error) {
+                    console.warn(error)
+                }
+                try {
+                    Event.postMessage(data)
+                } catch (error) {
+
+                } 
+            }
+        }
+
+        function getRequest() {
+            var url = decodeURIComponent(location.search); //获取url中"?"符后的字符串
+
+            var theRequest = new Object();
+            if (url.indexOf("?") != -1) {
+                var str = url.substr(1);
+                strs = str.split("&");
+                for (var i = 0; i < strs.length; i++) {
+                    theRequest[strs[i].split("=")[0]] = decodeURI(strs[i].split("=")[1]);
+                }
+            }
+            return theRequest;
+        }
+
+        function setupWKWebViewJavascriptBridge(callback) {
+            if (window.WKWebViewJavascriptBridge) { return callback(WKWebViewJavascriptBridge); }
+            if (window.WKWVJBCallbacks) { return window.WKWVJBCallbacks.push(callback); }
+            window.WKWVJBCallbacks = [callback];
+            window.webkit.messageHandlers.iOS_Native_InjectJavascript.postMessage(null)
+        }
+
+        function submit() {
+            if (formio) {
+                if (!formio.checkValidity()) {
+                    formio.executeSubmit();
+                } else {
+                    var params = formio._data;
+                    try {
+                        setupWKWebViewJavascriptBridge(function (bridge) {
+                            // h5调用app方法
+                            bridge.callHandler('submit', params, function (response) {
+                                // app登录成功的回调（登录信息）
+
+                            })
+                        })
+                    } catch (error) {
+                    }
+                    try {
+                        // h5调用app方法
+                        app.submit(params ? JSON.stringify(params) : '')
+                    } catch (error) {
+                    }
+                    try {
+                        Submit.postMessage(params)
+                    } catch (error) {
+                    
+                    }     
+                }
+            }
+        }
+
+        function cancel() {
+            callApp('mct-cancel')
+        }
+    </script>
+    <style type="text/css">
+        html {
+            height: 100%;
+            width: 100%;
+        }
+
+        #formio {
+            height: 100%;
+            overflow: auto;
+        }
+
+        #formio .formio-form-pdf {
+            height: 100%;
+        }
+
+        #formio .formio-component-button {
+            display: none;
+        }
+
+        #formio .formio-iframe {
+            height: 100%;
+            overflow: hidden;
+        }
+
+        .height100{
+            height: 100%;
+            width: auto;
+        }
+
+        .mct-btn {
+            margin: 10px 50px;
+        }
+
+        .mct-btn.submit-btn {
+            color: #FFF;
+            background-color: #009688;
+        }
+
+        .mct-btn.submit-btn:hover {
+            color: #FFF;
+            background-color: #006b61;
+        }
+
+        .mct-btn.submit-btn:active {
+            color: #FFF;
+            background-color: #00332e;
+        }
+
+        .mct-btn.cancel-btn {
+            border: 1px solid #000;
+        }
+
+        .mct-btn.cancel-btn:hover {
+            background-color: rgba(0, 0, 0, .08);
+        }
+
+        .mct-btn.cancel-btn:active {
+            background-color: rgba(0, 0, 0, .3);
+        }
+
+        .mct-card {
+            box-shadow: 0 3px 1px -2px rgb(0 0 0 / 14%), 0 2px 2px 0 rgb(0 0 0 / 10%), 0 1px 5px 0 rgb(0 0 0 / 8%);
+            border: 0;
+            border-radius: 4px;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+            word-wrap: break-word;
+            background-color: #fff;
+            background-clip: border-box;
+            width: 100%;
+            height: calc(100% - 30px);
+        }
+
+        .mct-card-body {
+            flex: 1 1 auto;
+            width: 100%;
+            padding: 0.9375rem;
+        }
+    </style>
+</head>
+
+<body style="background-color: rgb(245,247,250);height: 100%;width: 100%;">
+    <div class="" style="padding: 15px;height: 100%;width: 100%;">
+        <div class="mct-card">
+            <div class="mct-card-body" id="formio"></div>
+        </div>
+    </div>
+</body>
+
+</html>
